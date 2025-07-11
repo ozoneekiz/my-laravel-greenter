@@ -86,7 +86,7 @@ Cuando estés listo para pasar a producción, edita el archivo `config/greenter.
 'mode' => 'prod',
 
 'company' => [
-    'certificate' => file_get_contents(public_path('certs/certificate.pem')),
+    'certificate' => public_path('certs/certificate.pem'),
     'clave_sol' => [
         'user' => 'USUARIO_SOL',
         'password' => 'CLAVE_SOL',
@@ -192,7 +192,7 @@ $data = [ ... ]; // Datos del comprobante
 $response = Greenter::setCompany([
     'ruc' => '20999999999',
     'razonSocial' => 'Otra Empresa SAC',
-    'certificate' => file_get_contents(public_path('certs/otro_cert.pem')),
+    'certificate' => Storage::path('certs/otro_cert.pem'),
     // Otros datos...
 ])->send('invoice', $data);
 ```

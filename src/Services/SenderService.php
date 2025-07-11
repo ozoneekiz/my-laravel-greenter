@@ -15,6 +15,17 @@ use Termwind\Components\Dd;
 
 class SenderService
 {
+    public function setMode(string $mode): self
+    {
+        if (!in_array($mode, ['beta', 'prod'])) {
+            throw new GreenterException("Invalid mode: $mode. Use 'beta' or 'prod'.");
+        }
+
+        config(['greenter.mode' => $mode]);
+
+        return $this;
+    }
+
     public function setCompany(array $company): self
     {
         $defaultCompany = config('greenter.company');
