@@ -11,7 +11,7 @@ class ClientBuilder
     {
         return (new Client())
             ->setTipoDoc($data['tipoDoc'] ?? null)
-            ->setNumDoc($data['numDoc'] ?? null)
+            ->setNumDoc($data['numDoc'] ?? '-')
             ->setRznSocial($data['rznSocial'] ?? null)
             ->setAddress(
                 isset($data['address'])
