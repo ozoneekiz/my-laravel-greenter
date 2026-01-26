@@ -6,6 +6,7 @@ use CodersFree\LaravelGreenter\Senders\ApiBuilder;
 use CodersFree\LaravelGreenter\Services\ApiSender;
 use CodersFree\LaravelGreenter\Services\ReportService;
 use CodersFree\LaravelGreenter\Services\SenderService;
+use CodersFree\LaravelGreenter\Services\XmlService;
 use Illuminate\Support\ServiceProvider;
 
 class GreenterServiceProvider extends ServiceProvider
@@ -20,6 +21,10 @@ class GreenterServiceProvider extends ServiceProvider
 
         $this->app->singleton('greenter.report', function ($app) {
             return new ReportService();
+        });
+
+        $this->app->singleton('greenter.xml', function ($app) {
+            return new XmlService();
         });
     }
 

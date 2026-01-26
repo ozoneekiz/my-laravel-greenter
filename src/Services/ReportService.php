@@ -10,30 +10,10 @@ use Illuminate\Support\Facades\File;
 
 class ReportService
 {
-    public function setParams(array $params): self
-    {
-        $dafultParams = config('greenter.report.params');
-        $customParams = array_replace_recursive($dafultParams, $params);
-
-        config(['greenter.report.params' => $customParams]);
-
-        return $this;
-    }
-
-    public function setOptions(array $options): self
-    {
-        $defaultOptions = config('greenter.report.options');
-        $customOptions = array_replace_recursive($defaultOptions, $options);
-
-        config(['greenter.report.options' => $customOptions]);
-
-        return $this;
-    }
-
     public function generateHtml(DocumentInterface $document)
     {
         $htmlReport = $this->createHtmlReport($document);
-        return $htmlReport->render($document, $this->getParamsWithLogo());
+        return $htmlReport->render($document, $this->buildReportParams($document));
     }
 
     public function generatePdf(DocumentInterface $document)
@@ -44,7 +24,7 @@ class ReportService
         $pdfReport->setBinPath(config('greenter.report.bin_path'));
         $pdfReport->setOptions(config('greenter.report.options'));
         
-        $pdf = $pdfReport->render($document, $this->getParamsWithLogo());
+        $pdf = $pdfReport->render($document, $this->buildReportParams($document));
 
         if ($pdf === null) {
             throw new \RuntimeException($pdfReport->getExporter()->getError());
@@ -73,6 +53,30 @@ class ReportService
         $params = config('greenter.report.params');
 
         if (isset($params['system']['logo']) && file_exists($params['system']['logo'])) {
+            $params['system']['logo'] = file_get_contents($params['system']['logo']);
+        }
+
+        return $params;
+    }
+
+    //Cambiar configuracion
+    protected function buildReportParams(DocumentInterface $document): array
+    {
+        $params = config('greenter.report.params', []);
+
+        //Extras
+        $extras = $params['user']['extras'] ?? [];
+        array_unshift($extras, [
+            'name' => 'CONDICIÓN DE PAGO', 
+            'value' => method_exists($document, 'getCuotas') && !empty($document->getCuotas())
+                ? 'Crédito'
+                : 'Contado'
+        ]);
+
+        $params['user']['extras'] = $extras;
+        
+        //Logotipo
+        if (file_exists($params['system']['logo'])) {
             $params['system']['logo'] = file_get_contents($params['system']['logo']);
         }
 

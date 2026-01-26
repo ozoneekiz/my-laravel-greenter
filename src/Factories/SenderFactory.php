@@ -3,8 +3,8 @@
 namespace CodersFree\LaravelGreenter\Factories;
 
 use CodersFree\LaravelGreenter\Contracts\SenderInterface;
-use CodersFree\LaravelGreenter\Senders\ApiBuilder;
-use CodersFree\LaravelGreenter\Senders\SeeBuilder;
+use CodersFree\LaravelGreenter\Builders\Senders\ApiBuilder;
+use CodersFree\LaravelGreenter\Builders\Senders\SeeBuilder;
 
 class SenderFactory
 {

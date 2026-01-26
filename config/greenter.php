@@ -61,7 +61,6 @@ return [
             'user' => [
                 'header' => env('GREENTER_COMPANY_HEADER', 'Telf: <b>(01) 123456</b>'),
                 'extras' => [
-                    ['name' => 'CONDICIÓN DE PAGO', 'value' => 'Contado'],
                     ['name' => 'VENDEDOR', 'value' => 'VENDEDOR PRINCIPAL'],
                 ],
                 'footer' => env('GREENTER_COMPANY_FOOTER', '<p>Nro Resolución: <b>123456789</b></p>'),

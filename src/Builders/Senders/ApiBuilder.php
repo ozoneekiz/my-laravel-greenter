@@ -1,6 +1,6 @@
 <?php
 
-namespace CodersFree\LaravelGreenter\Senders;
+namespace CodersFree\LaravelGreenter\Builders\Senders;
 
 use CodersFree\LaravelGreenter\Contracts\SenderInterface;
 use CodersFree\LaravelGreenter\Exceptions\GreenterException;

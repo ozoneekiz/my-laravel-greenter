@@ -1,9 +1,11 @@
-# Laravel Greenter
+# Laravel Greenter (v2)
 
 **Laravel Greenter** es un paquete para emitir **comprobantes electrónicos** desde Laravel utilizando [Greenter](https://github.com/thegreenter/greenter). Permite:
 
 * Firmar comprobantes digitalmente
 * Enviarlos a SUNAT (SEE o API REST)
+* Gestionar respuestas estructuradas (CDRs)
+* Generar XML firmados
 * Generar su representación impresa en PDF (HTML y PDF)
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -17,14 +19,20 @@
   * [🛠️ Cambiar a Producción](#️-cambiar-a-producción)
 * [🧰 Uso Básico](#-uso-básico)
   * [🧾 Emisión de Comprobante Electrónico](#-emisión-de-comprobante-electrónico)
+  * [📨 Estructura de la Respuesta](#-estructura-de-la-respuesta)
+  * [📤 Métodos disponibles (Getters)](#métodos-disponibles-getters)
+  * [🔄 Convertir a Array](#convertir-a-array)
   * [🔁 Emisión Dinámica para Múltiples Empresas](#-emisión-dinámica-para-múltiples-empresas)
-* [📦 Otros Tipos de Comprobantes](#-otros-tipos-de-comprobantes)
+* [🔏 Gestión de XML](#-gestión-de-xml)
+  * [🧾 Generar XML Firmado](#generar-xml-firmado)
+  * [📨 Enviar XML existente](#enviar-xml-existente)
 * [🎨 Generar Representación Impresa](#-generar-representación-impresa)
   * [🧾 HTML](#-html)
   * [🖨️ PDF](#️-pdf)
+  * [🛠️ Generar Reporte sin Enviar a SUNAT](#️-generar-reporte-sin-enviar-a-sunat)
+* [📦 Otros Tipos de Comprobantes](#-otros-tipos-de-comprobantes)
   * [🎨 Personalizar Plantillas](#-personalizar-plantillas)
 * [🧪 Facades Disponibles](#-facades-disponibles)
-* [🧱 Estructura del Paquete](#-estructura-del-paquete)
 * [🔐 Seguridad Recomendada](#-seguridad-recomendada)
 * [📄 Licencia](#-licencia)
 
@@ -34,7 +42,7 @@ Este paquete requiere:
 
 * PHP >= 8.1
 * Laravel 11.x o superior
-* Extensiones PHP: `soap`, `openssl`
+* Extensiones PHP: `soap`, `openssl`, `dom`, `xml`
 * [wkhtmltopdf](https://wkhtmltopdf.org) (opcional, para generación de PDF)
 
 ## 🚀 Instalación
@@ -154,47 +162,252 @@ $data = [
 ];
 ```
 
+> ⚠️ **Importante:** Para saber qué datos debes enviar según el tipo de comprobante que estés emitiendo, te recomendamos revisar la documentación oficial de [greenter](https://greenter.dev)
+
 Envía el comprobante a SUNAT:
 
 ```php
 use CodersFree\LaravelGreenter\Facades\Greenter;
 use Illuminate\Support\Facades\Storage;
 
-try {
-    $response = Greenter::send('invoice', $data);
+// Enviar a SUNAT
+$response = Greenter::send('invoice', $data); //invoice, note, despatch, etc
 
-    $name = $response->getDocument()->getName();
+// Guardar XML
+$xml = $response->getXml();
+if($xml)
+{
     Storage::put("sunat/xml/{$name}.xml", $response->getXml());
-    Storage::put("sunat/cdr/{$name}.zip", $response->getCdrZip());
-
-    return response()->json([
-        'success' => true,
-        'cdrResponse' => $response->readCdr(),
-        'xml' => Storage::url("sunat/xml/{$name}.xml"),
-        'cdr' => Storage::url("sunat/cdr/{$name}.zip"),
-    ]);
-} catch (\Throwable $e) {
-    return response()->json([
-        'success' => false,
-        'code' => $e->getCode(),
-        'message' => $e->getMessage(),
-    ], 500);
 }
+
+//Guardamos CDR
+if($response->getSunatResponse()->getSuccess())
+{
+    $cdrZip = $response->getSunatResponse()->getCdrZip();
+    Storage::put("sunat/cdr/R-{$name}.zip", $cdrZip);
+}
+```
+
+### 📨 Estructura de la Respuesta
+
+El método Greenter::send() devuelve una instancia de SendResultDTO. Esta clase encapsula toda la información del proceso de firma y envío.
+
+```php
+namespace CodersFree\LaravelGreenter\DTOs;
+
+use Greenter\Model\DocumentInterface;
+
+class SendResultDTO
+{
+    public function __construct(
+        private ?DocumentInterface $document = null,
+        private ?string $xml = null,
+        private ?string $hash = null,
+        private ?SunatResponseDto $sunatResponse = null,
+    ) {
+    }
+}
+```
+
+```php
+<?php
+
+namespace CodersFree\LaravelGreenter\DTOs;
+
+class SunatResponseDto
+{
+    public function __construct(
+        private ?bool $success = null,
+        private ?ErrorDto $error = null,
+        private ?string $cdrZip = null,
+        private ?CdrResponseDto $cdrResponse = null,
+    ) {
+    }    
+}
+```
+
+```php
+<?php
+
+namespace CodersFree\LaravelGreenter\DTOs;
+
+class ErrorDto
+{
+    public function __construct(
+        private ?string $code = null,
+        private ?string $message = null,
+    ) {
+    }
+}
+```
+
+```php
+<?php
+
+namespace CodersFree\LaravelGreenter\DTOs;
+
+class CdrResponseDto
+{
+    /**
+     * @param string[]|null $notes
+     */
+    public function __construct(
+        private ?bool $accepted = null,
+        private ?string $id = null,
+        private ?string $code = null,
+        private ?string $description = null,
+        private ?array $notes = null,
+    ) {}
+}
+```
+
+### Métodos disponibles (Getters)
+
+Puedes acceder a los objetos y valores utilizando los getters de cada DTO:
+
+```php
+// --- SendResultDTO ---
+$response->getXml();           // string: XML firmado
+$response->getHash();          // string: Hash del XML
+$response->getDocument();      // DocumentInterface: Objeto del documento (Invoice, Note, etc)
+$sunatResponse = $response->getSunatResponse(); // SunatResponseDto
+
+// --- SunatResponseDto ---
+$sunatResponse->getSuccess();          // bool: Indica si hubo respuesta de SUNAT (true incluso si fue rechazada con CDR)
+$sunatResponse->getCdrZip();           // string|null: Contenido del ZIP del CDR (binario)
+$sunatResponse->getError();            // ErrorDto|null: Objeto de error si falló la conexión/validación
+$cdrResponse = $sunatResponse->getCdrResponse(); // CdrResponseDto|null: Objeto con datos del CDR
+
+// --- CdrResponseDto ---
+if ($cdrResponse) {
+    $cdrResponse->getAccepted();        // bool: true si el estado es aceptado
+    $cdrResponse->getCode();           // string: '0' = Aceptado
+    $cdrResponse->getDescription();    // string: Mensaje de respuesta de SUNAT
+    $cdrResponse->getNotes();          // array: Observaciones
+}
+
+// --- ErrorDto ---
+$error = $sunat->getError();
+if ($error) {
+    $error->getCode();         // string: Código de error
+    $error->getMessage();      // string: Descripción del error
+}
+```
+
+### Convertir a Array
+
+Para facilitar la creación de APIs, todos los DTOs implementan un método toArray(). Ejemplo:
+
+```php
+return response()->json($response->toArray());
 ```
 
 ### 🔁 Emisión Dinámica para Múltiples Empresas
 
-Puedes emitir comprobantes desde distintas empresas sin cambiar archivos de configuración:
+Para cambiar de empresa, credenciales o personalizar parámetros del reporte en tiempo de ejecución, utiliza el helper config() de Laravel antes de llamar a los métodos de Laravel Greenter.
 
 ```php
-$data = [ ... ]; // Datos del comprobante
+// Configuración dinámica
+config([
+    // Cambiar empresa emisora
+    'greenter.company.ruc' => '20999999999',
+    'greenter.company.razonSocial' => 'OTRA EMPRESA SAC',
+    'greenter.company.clave_sol.user' => 'MODDATOS',
+    'greenter.company.clave_sol.password' => 'MODDATOS',
+    'greenter.company.certificate' => storage_path('certs/otro_cert.pem'),
 
-$response = Greenter::setCompany([
-    'ruc' => '20999999999',
-    'razonSocial' => 'Otra Empresa SAC',
-    'certificate' => Storage::path('certs/otro_cert.pem'),
-    // Otros datos...
-])->send('invoice', $data);
+    // Personalizar reporte
+    'greenter.report.system.logo' => public_path('images/otro_logo.png'),
+    'greenter.report.user.header' => 'Teléfono: 999-999-999',
+]);
+
+// Ahora emite el comprobante con la nueva configuración
+$result = Greenter::send('invoice', $data);
+```
+
+## 🔏 Gestión de XML
+
+Si necesitas manipular el XML manualmente o enviarlo posteriormente.
+
+### Generar XML Firmado
+
+Genera el XML sin enviarlo a SUNAT:
+
+```php
+use CodersFree\LaravelGreenter\Facades\GreenterXml;
+
+$xmlSigned = GreenterXml::generateXml('invoice', $data); // Retorna string
+```
+
+### Enviar XML existente
+
+Si ya tienes un XML firmado y deseas enviarlo:
+
+```php
+// Retorna el mismo SendResultDTO explicado arriba
+$result = Greenter::sendXml('invoice', $xmlSigned);
+```
+
+## 🎨 Generar Representación Impresa
+
+### 🧾 HTML
+
+```php
+use CodersFree\LaravelGreenter\Facades\GreenterReport;
+
+$result = Greenter::send('invoice', $data);
+$document = $result->getDocument();
+
+if($document)
+{
+    $html = GreenterReport::generateHtml($document);
+}
+```
+
+### 🖨️ PDF
+
+Es necesario tener [wkhtmltopdf](https://wkhtmltopdf.org) instalado en el sistema para generar archivos PDF. Una vez instalado, configura la ruta del ejecutable en el archivo `config/greenter.php`:
+
+```php
+'report' => [
+    'bin_path' => '/usr/local/bin/wkhtmltopdf',
+],
+```
+
+```php
+use CodersFree\LaravelGreenter\Facades\GreenterReport;
+
+$result = Greenter::send('invoice', $data);
+$document = $result->getDocument();
+
+if($document)
+{
+    $name = $document->getName();
+
+    // Generar PDF
+    $pdf = GreenterReport::generatePdf($document);
+    Storage::put("sunat/pdf/{$name}.pdf", $pdf);
+}
+```
+
+### 🛠️ Generar Reporte sin Enviar a SUNAT
+
+Si necesitas visualizar el PDF antes de enviar el comprobante o simplemente para pruebas, debes construir el documento usando los Builders:
+
+```php
+use CodersFree\LaravelGreenter\Builders\InvoiceBuilder;
+use CodersFree\LaravelGreenter\Facades\GreenterReport;
+
+$data = [ ... ]; // Tus datos
+
+// 1. Construir el documento manualmente
+// Usa InvoiceBuilder, NoteBuilder, DespatchBuilder, etc. según corresponda
+$document = (new InvoiceBuilder())->build($data);
+$name = $document->getName();
+
+// 2. Generar el reporte
+$pdf = GreenterReport::generatePdf($document);
+Storage::put("sunat/pdf/{$name}.pdf", $pdf);
 ```
 
 ## 📦 Otros Tipos de Comprobantes
@@ -214,67 +427,6 @@ Además de facturas, puedes emitir:
 | Percepción          | `perception` | Comprobante de percepción       |
 
 Consulta la [documentación de Greenter](https://github.com/thegreenter/greenter) para ver los campos específicos de cada uno.
-
-## 🎨 Generar Representación Impresa
-
-### 🧾 HTML
-
-```php
-$data = [ ... ];
-$response = Greenter::send('invoice', $data);
-
-$html = GreenterReport::generateHtml($response->getDocument());
-```
-
-### 🖨️ PDF
-
-Es necesario tener [wkhtmltopdf](https://wkhtmltopdf.org) instalado en el sistema para generar archivos PDF. Una vez instalado, configura la ruta del ejecutable en el archivo `config/greenter.php`:
-
-```php
-'report' => [
-    'bin_path' => '/usr/local/bin/wkhtmltopdf',
-],
-```
-
-```php
-$data = [ ... ];
-$response = Greenter::send('invoice', $data);
-
-$pdf = GreenterReport::generatePdf($response->getDocument());
-Storage::put("sunat/pdf/{$name}.pdf", $pdf);
-```
-
-### ✏️ Modificar Parámetros y Opciones
-
-**Parámetros adicionales:**
-
-```php
-$html = GreenterReport::setParams([
-    'system' => [
-        'logo' => public_path('images/logo.png'),
-        'hash' => '',
-    ],
-    'user' => [
-        'header' => 'Telf: <b>(01) 123456</b>',
-        'extras' => [
-            ['name' => 'CONDICIÓN DE PAGO', 'value' => 'Contado'],
-            ['name' => 'VENDEDOR', 'value' => 'VENDEDOR PRINCIPAL'],
-        ],
-        'footer' => '<p>Nro Resolución: <b>123456789</b></p>',
-    ]
-])->generateHtml($response->getDocument());
-```
-
-**Opciones de generación:**
-
-```php
-$html = GreenterReport::setOptions([
-    'no-outline',
-    'viewport-size' => '1280x1024',
-    'page-width' => '21cm',
-    'page-height' => '29.7cm',
-])->generateHtml($response->getDocument());
-```
 
 ### 🎨 Personalizar Plantillas
 
@@ -297,20 +449,11 @@ Puedes personalizar y cambiar la ruta:
 
 ## 🧪 Facades Disponibles
 
-| Alias            | Función principal                              |
-| ---------------- | ---------------------------------------------- |
-| `Greenter`       | Firma y envía comprobantes electrónicos        |
-| `GreenterReport` | Genera HTML o PDF de la representación impresa |
-
-## 🧱 Estructura del Paquete
-
-Ejemplos de métodos disponibles:
-
-```php
-Greenter::send('invoice', $data);
-GreenterReport::generateHtml($document);
-GreenterReport::generatePdf($document);
-```
+| Alias            | Función principal                                       |
+| ---------------- | --------------------------------------------------------|
+| `Greenter`       | Firma y envía comprobantes electrónicos                 |
+| `GreenterXml`    | Genera únicamente el XML firmado a partir de los datos. |
+| `GreenterReport` | Genera HTML o PDF de la representación impresa          |
 
 ## 🔐 Seguridad Recomendada
 

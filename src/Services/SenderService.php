@@ -2,136 +2,123 @@
 
 namespace CodersFree\LaravelGreenter\Services;
 
-use CodersFree\LaravelGreenter\Exceptions\GreenterException;
+use CodersFree\LaravelGreenter\Builders\Responses\SendResultBuilder;
+use CodersFree\LaravelGreenter\Builders\Responses\SunatResponseBuilder;
+use CodersFree\LaravelGreenter\DTOs\ErrorDto;
+use CodersFree\LaravelGreenter\DTOs\SendResultDTO;
 use CodersFree\LaravelGreenter\Factories\DocumentBuilderFactory;
 use CodersFree\LaravelGreenter\Factories\SenderFactory;
-use CodersFree\LaravelGreenter\Factories\XmlBuilderFactory;
-use CodersFree\LaravelGreenter\Models\SunatResponse;
-use CodersFree\LaravelGreenter\Models\XmlSigned;
-use CodersFree\LaravelGreenter\Senders\SeeBuilder;
 use Greenter\Model\Response\SummaryResult;
-use Greenter\XMLSecLibs\Sunat\SignedXml;
-use Termwind\Components\Dd;
 
 class SenderService
 {
-    public function setMode(string $mode): self
-    {
-        if (!in_array($mode, ['beta', 'prod'])) {
-            throw new GreenterException("Invalid mode: $mode. Use 'beta' or 'prod'.");
-        }
-
-        config(['greenter.mode' => $mode]);
-
-        return $this;
-    }
-
-    public function setCompany(array $company): self
-    {
-        $defaultCompany = config('greenter.company');
-        $customCompany = array_replace_recursive($defaultCompany, $company);
-
-        config([
-            'greenter.company' => $customCompany
-        ]);
-
-        return $this;
-    }
-
-    public function getXmlSigned(string $type, array $data)
-    {
-        $document = (DocumentBuilderFactory::create($type))->build($data);
-        $xml = (XmlBuilderFactory::create($type))->build($document);
-
-        $certPath = config('greenter.company.certificate');
-
-        if (!file_exists($certPath)) {
-            throw new GreenterException("Certificate file not found: $certPath");
-        }
-
-        $signer = new SignedXml();
-        $signer->setCertificate(file_get_contents($certPath));
-        $xmlSigned = $signer->signXml($xml);
-
-        return new XmlSigned($type, $document, $xmlSigned);
-    }
-
-    public function send(string $type, array $data): SunatResponse
+    public function send(string $type, array $data): SendResultDTO
     {
         try {
-            $document = (DocumentBuilderFactory::create($type))->build($data);
 
+            // Sender
             $sender = (SenderFactory::create($type))->build();
 
-            $result = $sender->send($document);
-            $result = $this->processResult($result, $sender);
+            // Documento
+            $document = DocumentBuilderFactory::create($type)->build($data);
 
-            return new SunatResponse(
-                $document,
-                $result->getCdrZip(),
-                $result->getCdrResponse(),
-                $type === 'despatch'
-                    ? $sender->getLastXml()
-                    : $sender->getFactory()->getLastXml()
-            );
-        } catch (\Throwable $e) {
-            throw new GreenterException(
-                $e->getMessage(),
-                (int)$e->getCode(),
-                $e
-            );
+            //Envío a Sunat
+            $result = $sender->send($document);
+
+            // Resultado base
+            $sendResult = SendResultBuilder::make()
+                ->document($document)
+                ->xml(
+                    $type === 'despatch'
+                        ? $sender->getLastXml()
+                        : $sender->getFactory()->getLastXml()
+                );
+
+            // Procesar respuesta SUNAT
+            $sunatResponse = $this->processSunatResult($sender, $result);
+
+            return $sendResult
+                ->sunatResponse($sunatResponse)
+                ->build();
+
+        } catch (\Exception $e) {
+
+            return $this->exceptionResult($e);
+
         }
     }
 
-    public function sendXml(XmlSigned $xmlSigned)
+    public function sendXml(string $type, string $xml, $name = null)
     {
         try {
-            $sender = (SenderFactory::create($xmlSigned->getType()))->build();
-            $xml = $xmlSigned->getXml();
+            $sender = (SenderFactory::create($type))->build();
 
-            $result = $xmlSigned->getType() === 'despatch'
-                ? $sender->sendXml($xmlSigned->getDocument()->getName(), $xml)
+            $result = $type === 'despatch'
+                ? $sender->sendXml($name, $xml)
                 : $sender->sendXmlFile($xml);
 
-            $result = $this->processResult($result, $sender);
+            // Verificamos que la conexión con SUNAT fue exitosa.
+            $sunatResponse = $this->processSunatResult($sender, $result);
 
-            return new SunatResponse(
-                $xmlSigned->getDocument(),
-                $result->getCdrZip(),
-                $result->getCdrResponse(),
-                $xml
-            );
+            return SendResultBuilder::make()
+                ->sunatResponse($sunatResponse)
+                ->build();
 
-        } catch (\Throwable $e) {
-            throw new GreenterException(
-                $e->getMessage(),
-                (int)$e->getCode(),
-                $e
-            );
+        } catch (\Throwable $th) {
+
+            return $this->exceptionResult($th);
+
         }
     }
 
-    private function processResult($result, $sender)
+    public function processSunatResult($sender, $result)
     {
+        $sunatResponse = SunatResponseBuilder::make();
+
+        // Error de conexión o validación
         if (!$result->isSuccess()) {
-            throw new GreenterException(
-                $result->getError()->getMessage(),
-                (int)$result->getError()->getCode()
-            );
+
+            return $sunatResponse
+                ->success(false)
+                ->error(new ErrorDto(
+                    code: $result->getError()->getCode(),
+                    message: $result->getError()->getMessage()
+                ))->build();
         }
 
         if ($result instanceof SummaryResult) {
-            $ticket = $result->getTicket();
-            $result = $sender->getStatus($ticket);
+            $result = $sender->getStatus($result->getTicket());
 
             if (!$result->isSuccess()) {
-                throw new GreenterException(
-                    $result->getError()->getMessage(),
-                    (int)$result->getError()->getCode()
-                );
+                return $sunatResponse
+                    ->success(false)
+                    ->error(new ErrorDto(
+                        code: $result->getError()->getCode(),
+                        message: $result->getError()->getMessage()
+                    ))->build();
             }
         }
 
-        return $result;
+        // Guardamos el CDR
+        return $sunatResponse
+            ->success(true)
+            ->cdrZip($result->getCdrZip())
+            ->cdrResponse($result->getCdrResponse())
+            ->build();
+    }
+
+    private function exceptionResult(\Exception $e): SendResultDTO
+    {
+        return SendResultBuilder::make()
+            ->sunatResponse(
+                SunatResponseBuilder::make()
+                    ->success(false)
+                    ->error(new ErrorDto(
+                        code: $e->getCode(),
+                        message: $e->getMessage()
+                    ))
+                    ->build()
+            )
+            ->build();
     }
 }
