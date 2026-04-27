@@ -71,6 +71,15 @@ return [
             'strict_variables' => true,
         ],
         'templates' => resource_path('views/vendor/laravel-greenter'),
+        'template_theme' => env('GREENTER_REPORT_THEME', 'default'),
+        'template_themes' => [
+            'default' => resource_path('views/vendor/laravel-greenter'),
+            '80mm' => resource_path('views/vendor/80mm'),
+        ],
+        'template_by_type' => [
+            'invoice' => env('GREENTER_REPORT_TEMPLATE_INVOICE', '80mm'),
+            'note' => env('GREENTER_REPORT_TEMPLATE_NOTE', 'default'),
+        ],
         'options' => [
             'no-outline',
             'viewport-size' => '1280x1024',

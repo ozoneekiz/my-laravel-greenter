@@ -439,12 +439,36 @@ php artisan vendor:publish --tag=greenter-templates
 Ubicación por defecto:
 `resources/views/vendor/laravel-greenter`
 
-Puedes personalizar y cambiar la ruta:
+Puedes personalizar y cambiar la ruta de plantillas usando los nuevos campos de configuración:
 
 ```php
 'report' => [
-    'template' => resource_path('templates/laravel-greenter'),
+    'templates' => resource_path('views/vendor/laravel-greenter'),
+    'template_theme' => env('GREENTER_REPORT_THEME', 'default'),
+    'template_themes' => [
+        'default' => resource_path('views/vendor/laravel-greenter'),
+        '80mm' => resource_path('views/vendor/80mm'),
+    ],
+    'template_by_type' => [
+        'invoice' => env('GREENTER_REPORT_TEMPLATE_INVOICE', '80mm'),
+        'note' => env('GREENTER_REPORT_TEMPLATE_NOTE', 'default'),
+    ],
 ],
+```
+
+Ejemplos de uso en runtime (opcional):
+
+```php
+GreenterReport::setTemplateTheme('80mm');
+GreenterReport::setParams([
+    'user' => [
+        'header' => 'Mi header personalizado',
+    ],
+]);
+GreenterReport::setOptions([
+    'page-width' => '8cm',
+    'page-height' => '29.7cm',
+]);
 ```
 
 ## 🧪 Facades Disponibles

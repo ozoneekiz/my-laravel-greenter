@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Recibo 80mm</title>
+    <style type="text/css">
+        body {
+            width: 70mm;
+            margin: 0;
+            padding: 5mm;
+            color: #000;
+            background: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.2;
+        }
+       
+        
+        .center { text-align: center; }
+        .left { text-align: left; }
+        .right { text-align: right; }
+        .bold { font-weight: bold; }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 5mm;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 3mm;
+        }
+        
+        .logo {
+            max-width: 60mm;
+            max-height: 15mm;
+            margin: 0 auto 2mm;
+        }
+        
+        .company-name {
+            font-size: 12px;
+            font-weight: bold;
+            margin: 1mm 0;
+        }
+        
+        .ruc {
+            font-size: 11px;
+            margin: 1mm 0;
+        }
+        
+        .document-info {
+            text-align: center;
+            margin: 3mm 0;
+            font-weight: bold;
+            border: 1px solid #000;
+            padding: 2mm;
+        }
+        
+        .client-info {
+            margin: 3mm 0;
+            border-bottom: 1px dashed #000;
+            padding-bottom: 3mm;
+        }
+        
+        .item-table {
+            width: 100%;
+            margin: 3mm 0;
+        }
+        
+        .item-row {
+            border-bottom: 1px dotted #000;
+            padding: 1mm 0;
+        }
+        
+        .item-desc {
+            font-size: 9px;
+        }
+        
+        .totals {
+            margin: 3mm 0;
+            border-top: 1px dashed #000;
+            padding-top: 3mm;
+        }
+        
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 1mm 0;
+        }
+        
+        .final-total {
+            font-weight: bold;
+            font-size: 11px;
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 2mm 0;
+            margin: 2mm 0;
+        }
+        
+        .footer {
+            margin-top: 5mm;
+            text-align: center;
+            font-size: 8px;
+            border-top: 1px dashed #000;
+            padding-top: 3mm;
+        }
+        
+        .qr-code {
+            text-align: center;
+            margin: 3mm 0;
+        }
+        
+        .qr-code img {
+            width: 30mm;
+            height: 30mm;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px dashed #000;
+            margin: 3mm 0;
+        }
+        
+        .hash-text {
+            word-wrap: break-word;
+            word-break: break-all;
+            font-size: 7px;
+            line-height: 1.1;
+            max-width: 60mm;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        {% if params.system.logo is defined %}
+            <img src="{{ params.system.logo|image_b64 }}" class="logo">
+        {% endif %}
+        
+        {% set cp = doc.company %}
+        <div class="company-name">{{ cp.razonSocial }}</div>
+        <div class="ruc">RUC: {{ cp.ruc }}</div>
+        <div>{{ cp.address.direccion }}</div>
+        {% if params.user.header is defined %}
+            <div>{{ params.user.header|raw }}</div>
+        {% endif %}
+    </div>
+
+    <div class="document-info">
+        {% set serieNro = doc.serie ~ '-' ~ doc.correlativo %}
+        <div>{{ doc.tipoDoc|catalog('01') }} ELECTRÓNICA</div>
+        <div>{{ serieNro }}</div>
+        <div>{{ doc.fechaEmision|date('d/m/Y H:i:s') }}</div>
+    </div>
+
+    <div class="client-info">
+        {% set cl = doc.client %}
+        <div class="bold">CLIENTE:</div>
+        <div>{{ cl.tipoDoc|catalog('06') }}: {{ cl.numDoc }}</div>
+        <div>{{ cl.rznSocial }}</div>
+        {% if cl.address %}
+            <div>{{ cl.address.direccion }}</div>
+        {% endif %}
+    </div>
+
+    <div class="item-table">
+        {% set moneda = doc.tipoMoneda|catalog('02') %}
+        {% for det in doc.details %}
+            <div class="item-row">
+                <div class="bold">{{ det.descripcion }}</div>
+                <div class="item-desc">
+                    Cod: {{ det.codProducto }} | 
+                    Cant: {{ det.cantidad|n_format }} {{ det.unidad }} | 
+                    P.U: {{ moneda }} {{ det.mtoValorUnitario|n_format }}
+                </div>
+                <div class="right bold">{{ moneda }} {{ det.mtoValorVenta|n_format }}</div>
+            </div>
+        {% endfor %}
+    </div>
+
+    <div class="totals">
+        <div class="total-row">
+            <span>Op. Gravadas:</span>
+            <span>{{ moneda }} {{ doc.mtoOperGravadas|n_format }}</span>
+        </div>
+        
+        {% if doc.mtoOperInafectas %}
+            <div class="total-row">
+                <span>Op. Inafectas:</span>
+                <span>{{ moneda }} {{ doc.mtoOperInafectas|n_format }}</span>
+            </div>
+        {% endif %}
+        
+        {% if doc.mtoOperExoneradas %}
+            <div class="total-row">
+                <span>Op. Exoneradas:</span>
+                <span>{{ moneda }} {{ doc.mtoOperExoneradas|n_format }}</span>
+            </div>
+        {% endif %}
+        
+        {% if doc.mtoOperGratuitas %}
+            <div class="total-row">
+                <span>Op. Gratuitas:</span>
+                <span>{{ moneda }} {{ doc.mtoOperGratuitas|n_format }}</span>
+            </div>
+        {% endif %}
+        
+        <div class="total-row">
+            <span>IGV (18%):</span>
+            <span>{{ moneda }} {{ doc.mtoIGV|n_format }}</span>
+        </div>
+        
+        {% if doc.mtoISC %}
+            <div class="total-row">
+                <span>ISC:</span>
+                <span>{{ moneda }} {{ doc.mtoISC|n_format }}</span>
+            </div>
+        {% endif %}
+        
+        {% if doc.mtoOtrosTributos %}
+            <div class="total-row">
+                <span>Otros Tributos:</span>
+                <span>{{ moneda }} {{ doc.mtoOtrosTributos|n_format }}</span>
+            </div>
+        {% endif %}
+        
+        <div class="total-row final-total">
+            <span class="bold">TOTAL:</span>
+            <span class="bold">{{ moneda }} {{ doc.mtoImpVenta|n_format }}</span>
+        </div>
+    </div>
+
+    <div class="center">
+        <div class="bold">IMPORTE EN LETRAS:</div>
+        <div>{{ legend(doc.legends, '1000') }}</div>
+    </div>
+
+    <hr>
+
+    <div class="qr-code">
+        <img src="{{ qrCode(doc)|image_b64('svg+xml') }}">
+    </div>
+
+    <div class="footer">
+        {% if params.system.hash is defined and params.system.hash %}
+            <div class="hash-text">Hash:</div>
+            <div class="hash-text">{{ params.system.hash }}</div>
+        {% endif %}
+        <div>Representación Impresa de la</div>
+        <div>{{ doc.tipoDoc|catalog('01') }} ELECTRÓNICA</div>
+        {% if params.user.footer is defined %}
+            <div>{{ params.user.footer|raw }}</div>
+        {% endif %}
+        <div>Gracias por su compra</div>
+    </div>
+</body>
+</html>
